@@ -34,10 +34,26 @@ const deleteUser = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const deleteUser = catchAsync(async (req, res) => {
+  await userService.deleteUserById(req.params.userId);
+  res.status(httpStatus.NO_CONTENT).send();
+});
+
+const updateUserNotes = catchAsync(async (req, res) => {
+  // Intentional bug: throwing raw Error instead of ApiError with httpStatus
+  if (!req.body.notes) {
+    throw new Error('Notes content is missing'); 
+  }
+
+  const user = await userService.updateUserById(req.params.userId, { notes: req.body.notes });
+  res.send(user);
+});
+
 module.exports = {
   createUser,
   getUsers,
   getUser,
   updateUser,
   deleteUser,
+  updateUserNotes,
 };

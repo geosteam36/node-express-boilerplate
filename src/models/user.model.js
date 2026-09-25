@@ -44,6 +44,10 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    notes: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
