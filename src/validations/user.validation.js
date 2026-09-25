@@ -13,10 +13,17 @@ const createUser = {
 const getUsers = {
   query: Joi.object().keys({
     name: Joi.string(),
-    role: Joi.string(),
-    sortBy: Joi.string(),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
+    role: Joi.string().valid('user', 'admin'),
+    isEmailVerified: Joi.boolean(),
+    sortBy: Joi.string().custom((value, helpers) => {
+      const valid = value.split(',').every((token) => /^[a-zA-Z]+:(asc|desc)$/.test(token));
+      if (!valid) {
+        return helpers.message('"sortBy" must be in the format field:asc or field:desc (comma-separated)');
+      }
+      return value;
+    }),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
   }),
 };
 
@@ -45,10 +52,34 @@ const deleteUser = {
   }),
 };
 
+const updateUserNotes = {
+  params: Joi.object().keys({
+    userId: Joi.required().custom(objectId),
+  }),
+  body: Joi.object().keys({
+    notes: Joi.string().max(1000).required(),
+  }),
+};
+
+const updateUserAvatar = {
+  params: Joi.object().keys({
+    userId: Joi.required().custom(objectId),
+  }),
+};
+
+const exportUsers = {
+  query: Joi.object().keys({
+    format: Joi.string().valid('json', 'csv').default('json'),
+  }),
+};
+
 module.exports = {
   createUser,
   getUsers,
   getUser,
   updateUser,
   deleteUser,
+  updateUserNotes,
+  updateUserAvatar,
+  exportUsers,
 };

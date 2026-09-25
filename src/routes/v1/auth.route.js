@@ -15,6 +15,11 @@ router.post('/reset-password', validate(authValidation.resetPassword), authContr
 router.post('/send-verification-email', auth(), authController.sendVerificationEmail);
 router.post('/verify-email', validate(authValidation.verifyEmail), authController.verifyEmail);
 
+// 2FA routes
+router.post('/2fa/generate', auth(), authController.generate2faSecret);
+router.post('/2fa/verify', auth(), validate(authValidation.verify2fa), authController.verify2fa);
+router.post('/2fa/validate', validate(authValidation.validate2faLogin), authController.validate2faLogin);
+
 module.exports = router;
 
 /**

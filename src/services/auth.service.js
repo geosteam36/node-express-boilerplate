@@ -1,6 +1,7 @@
 const httpStatus = require('http-status');
 const tokenService = require('./token.service');
 const userService = require('./user.service');
+const twoFactorService = require('./twoFactor.service');
 const Token = require('../models/token.model');
 const ApiError = require('../utils/ApiError');
 const { tokenTypes } = require('../config/tokens');
@@ -16,6 +17,21 @@ const loginUserWithEmailAndPassword = async (email, password) => {
   if (!user || !(await user.isPasswordMatch(password))) {
     throw new ApiError(httpStatus.UNAUTHORIZED, 'Incorrect email or password');
   }
+  return user;
+};
+
+/**
+ * Complete login for a user who has 2FA enabled by verifying their TOTP code.
+ * @param {string} userId
+ * @param {string} token  - 6-digit TOTP code
+ * @returns {Promise<User>}
+ */
+const loginWithTwoFactor = async (userId, token) => {
+  const user = await userService.getUserById(userId);
+  if (!user) {
+    throw new ApiError(httpStatus.UNAUTHORIZED, 'Incorrect credentials');
+  }
+  twoFactorService.validateLoginToken(user, token);
   return user;
 };
 
@@ -92,6 +108,7 @@ const verifyEmail = async (verifyEmailToken) => {
 
 module.exports = {
   loginUserWithEmailAndPassword,
+  loginWithTwoFactor,
   logout,
   refreshAuth,
   resetPassword,

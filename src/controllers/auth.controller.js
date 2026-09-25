@@ -1,6 +1,6 @@
 const httpStatus = require('http-status');
 const catchAsync = require('../utils/catchAsync');
-const { authService, userService, tokenService, emailService } = require('../services');
+const { authService, userService, tokenService, emailService, twoFactorService } = require('../services');
 
 const register = catchAsync(async (req, res) => {
   const user = await userService.createUser(req.body);
@@ -11,8 +11,14 @@ const register = catchAsync(async (req, res) => {
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
   const user = await authService.loginUserWithEmailAndPassword(email, password);
+
+  if (user.isTwoFactorEnabled) {
+    // Credentials are correct but 2FA is required; return a challenge instead of tokens.
+    return res.send({ twoFactorRequired: true, userId: user.id });
+  }
+
   const tokens = await tokenService.generateAuthTokens(user);
-  res.send({ user, tokens });
+  return res.send({ user, tokens });
 });
 
 const logout = catchAsync(async (req, res) => {
@@ -47,6 +53,23 @@ const verifyEmail = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const generate2faSecret = catchAsync(async (req, res) => {
+  const { otpauthUrl, qrCodeDataUrl } = await twoFactorService.generateSecret(req.user);
+  res.send({ otpauthUrl, qrCodeDataUrl });
+});
+
+const verify2fa = catchAsync(async (req, res) => {
+  await twoFactorService.verifyAndEnable(req.user, req.body.token);
+  res.status(httpStatus.NO_CONTENT).send();
+});
+
+const validate2faLogin = catchAsync(async (req, res) => {
+  const { userId, token } = req.body;
+  const user = await authService.loginWithTwoFactor(userId, token);
+  const tokens = await tokenService.generateAuthTokens(user);
+  res.send({ user, tokens });
+});
+
 module.exports = {
   register,
   login,
@@ -56,4 +79,7 @@ module.exports = {
   resetPassword,
   sendVerificationEmail,
   verifyEmail,
+  generate2faSecret,
+  verify2fa,
+  validate2faLogin,
 };

@@ -1,6 +1,9 @@
 const express = require('express');
 const auth = require('../../middlewares/auth');
+const requireAdmin = require('../../middlewares/requireAdmin');
 const validate = require('../../middlewares/validate');
+const { notesLimiter } = require('../../middlewares/rateLimiter');
+const { handleAvatarUpload } = require('../../middlewares/upload');
 const userValidation = require('../../validations/user.validation');
 const userController = require('../../controllers/user.controller');
 
@@ -11,6 +14,9 @@ router
   .post(auth('manageUsers'), validate(userValidation.createUser), userController.createUser)
   .get(auth('getUsers'), validate(userValidation.getUsers), userController.getUsers);
 
+// /export must be registered before /:userId so "export" is not treated as a userId param
+router.get('/export', auth('manageUsers'), validate(userValidation.exportUsers), userController.exportUsers);
+
 router
   .route('/:userId')
   .get(auth('getUsers'), validate(userValidation.getUser), userController.getUser)
@@ -19,8 +25,24 @@ router
 
 router
   .route('/:userId/notes')
-  .patch(auth('manageUsers'), userController.updateUserNotes);
-  
+  .patch(
+    auth('manageUsers'),
+    requireAdmin,
+    notesLimiter,
+    validate(userValidation.updateUserNotes),
+    userController.updateUserNotes
+  );
+
+router
+  .route('/:userId/avatar')
+  .patch(
+    auth('manageUsers'),
+    requireAdmin,
+    validate(userValidation.updateUserAvatar),
+    handleAvatarUpload,
+    userController.updateUserAvatar
+  );
+
 module.exports = router;
 
 /**

@@ -9,6 +9,7 @@ const envVarsSchema = Joi.object()
     NODE_ENV: Joi.string().valid('production', 'development', 'test').required(),
     PORT: Joi.number().default(3000),
     MONGODB_URL: Joi.string().required().description('Mongo DB url'),
+    MONGODB_URL_TEST: Joi.string().description('Mongo DB url used by tests'),
     JWT_SECRET: Joi.string().required().description('JWT secret key'),
     JWT_ACCESS_EXPIRATION_MINUTES: Joi.number().default(30).description('minutes after which access tokens expire'),
     JWT_REFRESH_EXPIRATION_DAYS: Joi.number().default(30).description('days after which refresh tokens expire'),
@@ -32,13 +33,35 @@ if (error) {
   throw new Error(`Config validation error: ${error.message}`);
 }
 
+const getTestDatabaseUrl = (url) => {
+  const queryStart = url.indexOf('?');
+  const baseUrl = queryStart === -1 ? url : url.slice(0, queryStart);
+  const query = queryStart === -1 ? '' : url.slice(queryStart);
+  const databaseStart = baseUrl.lastIndexOf('/') + 1;
+  return `${baseUrl.slice(0, databaseStart)}${baseUrl.slice(databaseStart)}-test${query}`;
+};
+
+const normalizeMongoUrl = (url) =>
+  url.startsWith('mongodb://') || url.startsWith('mongodb+srv://') ? url : `mongodb+srv://${url}`;
+
+const getMongoUrl = () => {
+  if (envVars.NODE_ENV !== 'test') {
+    return envVars.MONGODB_URL;
+  }
+  if (!envVars.MONGODB_URL_TEST) {
+    return getTestDatabaseUrl(envVars.MONGODB_URL);
+  }
+  return normalizeMongoUrl(envVars.MONGODB_URL_TEST);
+};
+
 module.exports = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
   mongoose: {
-    url: envVars.MONGODB_URL + (envVars.NODE_ENV === 'test' ? '-test' : ''),
+    url: getMongoUrl(),
     options: {
       useCreateIndex: true,
+      useFindAndModify: false,
       useNewUrlParser: true,
       useUnifiedTopology: true,
     },

@@ -4,6 +4,7 @@ const httpStatus = require('http-status');
 const httpMocks = require('node-mocks-http');
 const moment = require('moment');
 const bcrypt = require('bcryptjs');
+const speakeasy = require('speakeasy');
 const app = require('../../src/app');
 const config = require('../../src/config/config');
 const auth = require('../../src/middlewares/auth');
@@ -39,6 +40,7 @@ describe('Auth routes', () => {
         email: newUser.email,
         role: 'user',
         isEmailVerified: false,
+        isTwoFactorEnabled: false,
       });
 
       const dbUser = await User.findById(res.body.user.id);
@@ -98,6 +100,7 @@ describe('Auth routes', () => {
         email: userOne.email,
         role: userOne.role,
         isEmailVerified: userOne.isEmailVerified,
+        isTwoFactorEnabled: false,
       });
 
       expect(res.body.tokens).toEqual({
@@ -583,5 +586,198 @@ describe('Auth middleware', () => {
     await auth(...roleRights.get('admin'))(req, httpMocks.createResponse(), next);
 
     expect(next).toHaveBeenCalledWith();
+  });
+});
+
+describe('2FA routes', () => {
+  describe('POST /v1/auth/2fa/generate', () => {
+    test('should return 200 with otpauthUrl and qrCodeDataUrl when authenticated', async () => {
+      await insertUsers([userOne]);
+
+      const res = await request(app)
+        .post('/v1/auth/2fa/generate')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send()
+        .expect(httpStatus.OK);
+
+      expect(res.body).toHaveProperty('otpauthUrl');
+      expect(res.body).toHaveProperty('qrCodeDataUrl');
+      expect(res.body.qrCodeDataUrl).toMatch(/^data:image\/png;base64,/);
+
+      // Secret should be persisted on the user but not exposed in the response
+      const dbUser = await User.findById(userOne._id);
+      expect(dbUser.twoFactorSecret).toBeDefined();
+      expect(res.body).not.toHaveProperty('twoFactorSecret');
+    });
+
+    test('should return 401 if no access token is provided', async () => {
+      await request(app).post('/v1/auth/2fa/generate').send().expect(httpStatus.UNAUTHORIZED);
+    });
+  });
+
+  describe('POST /v1/auth/2fa/verify', () => {
+    test('should return 204 and enable 2FA when token is correct', async () => {
+      await insertUsers([userOne]);
+
+      // Generate and store a secret directly so we can compute a valid TOTP
+      const secret = speakeasy.generateSecret();
+      await User.findByIdAndUpdate(userOne._id, { twoFactorSecret: secret.base32 });
+
+      const validToken = speakeasy.totp({ secret: secret.base32, encoding: 'base32' });
+
+      await request(app)
+        .post('/v1/auth/2fa/verify')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send({ token: validToken })
+        .expect(httpStatus.NO_CONTENT);
+
+      const dbUser = await User.findById(userOne._id);
+      expect(dbUser.isTwoFactorEnabled).toBe(true);
+    });
+
+    test('should return 401 when TOTP token is incorrect', async () => {
+      await insertUsers([userOne]);
+      const secret = speakeasy.generateSecret();
+      await User.findByIdAndUpdate(userOne._id, { twoFactorSecret: secret.base32 });
+
+      await request(app)
+        .post('/v1/auth/2fa/verify')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send({ token: '000000' })
+        .expect(httpStatus.UNAUTHORIZED);
+    });
+
+    test('should return 400 when 2FA setup has not been initiated', async () => {
+      await insertUsers([userOne]);
+
+      await request(app)
+        .post('/v1/auth/2fa/verify')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send({ token: '123456' })
+        .expect(httpStatus.BAD_REQUEST);
+    });
+
+    test('should return 400 when token is missing from request body', async () => {
+      await insertUsers([userOne]);
+
+      await request(app)
+        .post('/v1/auth/2fa/verify')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send({})
+        .expect(httpStatus.BAD_REQUEST);
+    });
+
+    test('should return 400 when token is not exactly 6 digits', async () => {
+      await insertUsers([userOne]);
+
+      await request(app)
+        .post('/v1/auth/2fa/verify')
+        .set('Authorization', `Bearer ${userOneAccessToken}`)
+        .send({ token: '12345' })
+        .expect(httpStatus.BAD_REQUEST);
+    });
+
+    test('should return 401 if no access token is provided', async () => {
+      await request(app).post('/v1/auth/2fa/verify').send({ token: '123456' }).expect(httpStatus.UNAUTHORIZED);
+    });
+  });
+
+  describe('POST /v1/auth/2fa/validate (second-factor login)', () => {
+    test('should return 200 with user and tokens when userId and TOTP token are correct', async () => {
+      const secret = speakeasy.generateSecret();
+
+      // Insert userOne with 2FA already enabled
+      await User.create({
+        ...userOne,
+        password: userOne.password,
+        twoFactorSecret: secret.base32,
+        isTwoFactorEnabled: true,
+      });
+
+      const validToken = speakeasy.totp({ secret: secret.base32, encoding: 'base32' });
+
+      const res = await request(app)
+        .post('/v1/auth/2fa/validate')
+        .send({ userId: userOne._id.toHexString(), token: validToken })
+        .expect(httpStatus.OK);
+
+      expect(res.body.user).toMatchObject({ id: userOne._id.toHexString() });
+      expect(res.body.tokens).toEqual({
+        access: { token: expect.anything(), expires: expect.anything() },
+        refresh: { token: expect.anything(), expires: expect.anything() },
+      });
+    });
+
+    test('should return 401 when TOTP token is wrong', async () => {
+      const secret = speakeasy.generateSecret();
+      await User.create({
+        ...userOne,
+        password: userOne.password,
+        twoFactorSecret: secret.base32,
+        isTwoFactorEnabled: true,
+      });
+
+      await request(app)
+        .post('/v1/auth/2fa/validate')
+        .send({ userId: userOne._id.toHexString(), token: '000000' })
+        .expect(httpStatus.UNAUTHORIZED);
+    });
+
+    test('should return 401 when userId does not exist', async () => {
+      await request(app)
+        .post('/v1/auth/2fa/validate')
+        .send({ userId: userOne._id.toHexString(), token: '123456' })
+        .expect(httpStatus.UNAUTHORIZED);
+    });
+
+    test('should return 400 when userId is missing', async () => {
+      await request(app).post('/v1/auth/2fa/validate').send({ token: '123456' }).expect(httpStatus.BAD_REQUEST);
+    });
+
+    test('should return 400 when token is missing', async () => {
+      await request(app)
+        .post('/v1/auth/2fa/validate')
+        .send({ userId: userOne._id.toHexString() })
+        .expect(httpStatus.BAD_REQUEST);
+    });
+
+    test('should return 400 when token is not 6 digits', async () => {
+      await request(app)
+        .post('/v1/auth/2fa/validate')
+        .send({ userId: userOne._id.toHexString(), token: '12345' })
+        .expect(httpStatus.BAD_REQUEST);
+    });
+  });
+
+  describe('POST /v1/auth/login with 2FA enabled', () => {
+    test('should return twoFactorRequired and userId instead of tokens when 2FA is enabled', async () => {
+      const secret = speakeasy.generateSecret();
+      await User.create({
+        ...userOne,
+        password: userOne.password,
+        twoFactorSecret: secret.base32,
+        isTwoFactorEnabled: true,
+      });
+
+      const res = await request(app)
+        .post('/v1/auth/login')
+        .send({ email: userOne.email, password: userOne.password })
+        .expect(httpStatus.OK);
+
+      expect(res.body).toEqual({ twoFactorRequired: true, userId: userOne._id.toHexString() });
+      expect(res.body).not.toHaveProperty('tokens');
+    });
+
+    test('should return tokens directly when 2FA is not enabled', async () => {
+      await insertUsers([userOne]);
+
+      const res = await request(app)
+        .post('/v1/auth/login')
+        .send({ email: userOne.email, password: userOne.password })
+        .expect(httpStatus.OK);
+
+      expect(res.body).toHaveProperty('tokens');
+      expect(res.body).not.toHaveProperty('twoFactorRequired');
+    });
   });
 });

@@ -49,6 +49,29 @@ const verifyEmail = {
   }),
 };
 
+const generate2faSecret = {
+  // no body — user identity comes from the Bearer token
+};
+
+const verify2fa = {
+  body: Joi.object().keys({
+    token: Joi.string()
+      .length(6)
+      .pattern(/^[0-9]+$/)
+      .required(),
+  }),
+};
+
+const validate2faLogin = {
+  body: Joi.object().keys({
+    userId: Joi.string().required(),
+    token: Joi.string()
+      .length(6)
+      .pattern(/^[0-9]+$/)
+      .required(),
+  }),
+};
+
 module.exports = {
   register,
   login,
@@ -57,4 +80,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  generate2faSecret,
+  verify2fa,
+  validate2faLogin,
 };

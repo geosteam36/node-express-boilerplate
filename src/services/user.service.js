@@ -79,6 +79,15 @@ const deleteUserById = async (userId) => {
   return user;
 };
 
+/**
+ * Export all users as plain objects suitable for serialisation.
+ * Excludes private fields (password, twoFactorSecret) at the query level.
+ * @returns {Promise<Object[]>}
+ */
+const exportUsers = async () => {
+  return User.find({}, '-password -twoFactorSecret').lean();
+};
+
 module.exports = {
   createUser,
   queryUsers,
@@ -86,4 +95,5 @@ module.exports = {
   getUserByEmail,
   updateUserById,
   deleteUserById,
+  exportUsers,
 };

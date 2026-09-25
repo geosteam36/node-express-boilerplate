@@ -48,6 +48,18 @@ const userSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    avatarPath: {
+      type: String,
+      trim: true,
+    },
+    isTwoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    twoFactorSecret: {
+      type: String,
+      private: true, // excluded from toJSON serialisation
+    },
   },
   {
     timestamps: true,

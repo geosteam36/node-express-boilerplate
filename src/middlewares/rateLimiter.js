@@ -6,6 +6,14 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
+const notesLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  skipSuccessfulRequests: false,
+  message: 'Too many requests, please try again later.',
+});
+
 module.exports = {
   authLimiter,
+  notesLimiter,
 };
