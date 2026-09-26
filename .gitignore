@@ -10,3 +10,7 @@ yarn-error.log
 
 # Code coverage
 coverage
+
+# Test artifacts
+register.json
+public/uploads/avatar-*
