@@ -1,0 +1,19 @@
+# Environment variables and secrets
+.env*
+!.env*.example
+
+# Dependencies
+node_modules
+
+# Build artifacts
+coverage
+dist
+build
+
+# Logs
+yarn-error.log
+*.log
+
+# IDE / OS
+.vscode
+.DS_Store
