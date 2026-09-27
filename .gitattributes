@@ -1,3 +1,9 @@
 # Convert text file line endings to lf
 * text eol=lf
 *.js text
+
+# Treat images as binary — do not touch their line endings
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
